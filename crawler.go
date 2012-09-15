@@ -58,12 +58,11 @@ func main() {
     ResponceCount = 0
     MaxResponce = NextStep
     NextStep = 0
-    l := <-LinkChannel
     suc := true
     for ;suc; {
-      WorkerChannel<-l
       select {
-        case l = <-LinkChannel:
+        case l := <-LinkChannel:
+            WorkerChannel<-l
         default: suc = false
       }
     }
@@ -86,11 +85,13 @@ func StartCrawler(Action func (*Link,string,string)) {
 func HandleNewLink(L *Link, title string, body string) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
-    for i,l := range Links {
+    for _,l := range Links {
+      fmt.Printf("returning link %s\n",l.Url)
       LinkChannel<-l
       StoreChannel<-&l.Url
-      ReplyChannel<-i+1
     }
+    ReplyChannel<-len(Links)
+    fmt.Printf("all links returned for %s\n",L.Url)
   }
 }
 
@@ -107,6 +108,7 @@ func StartStore() {
 var httpClient *http.Client = &http.Client{}
 // gets the html from the given link
 func (self *Link) UrlGet() string {
+  fmt.Printf("retreving %s\n",self.Url)
   resp, _ := httpClient.Get(self.Url)
   body, _ := ioutil.ReadAll(resp.Body)
   resp.Body.Close()
@@ -120,8 +122,8 @@ func (self *Link) UrlGet() string {
 var RXC = regexp.MustCompile
 
 var TitleRegexp       *regexp.Regexp = RXC("<title>.*<title>")
-var MainDivHeadRegexp *regexp.Regexp = RXC("<!-- bodyContent --><div id=\"mw-content-text.*<!-- /bodyContent -->")
-var LinkRegexp         *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
+var MainDivHeadRegexp *regexp.Regexp = RXC("<!-- bodyContent -->\n<div id=\"mw-content-text.*\n<!-- /bodyContent -->")
+var LinkRegexp        *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
 
 // get the title from the wikipedia page
 func TitleGet(body string) string {
@@ -130,13 +132,16 @@ func TitleGet(body string) string {
 
 // get all Links from the content of the body of a page
 func getLinks(body string, currentdepth int) []*Link {
+  fmt.Printf("parsing links\n")
   content := getContent(body)
+  fmt.Printf("body is %s\n",content)
   depth := currentdepth + 1
   links   := LinkRegexp.FindAllString(content,100)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
     retLinks[i] = &Link{strings.SplitAfterN(s,"\"",3)[1],depth}
   }
+  fmt.Printf("parsing complete\n")
   return retLinks
 }
 
