@@ -1,12 +1,14 @@
 package main
 
 import (
+  "fmt"
   "strings"
   "regexp"
+  "strconv"
 )
 
 type Store struct {
-  Nodes map[rune]*Store
+  Nodes map[byte]*Store
   isTerminal bool
 }
 
@@ -19,7 +21,7 @@ type Link struct {
 var MainChannel  chan *Link = make(chan *Link)
 var StoreChannel chan *string = make(chan *string)
 
-var MainStore Store = Store{make(map[rune]*Store),false}
+var MainStore Store = Store{make(map[byte]*Store),false}
 
 var ThreadCount int = 100
 
@@ -33,7 +35,7 @@ func main() {
   }
   go StartStore()
   MainChannel<-StartLink
-  return
+  for ;; {}
 }
 
 // pulls links from the main channel
@@ -47,12 +49,12 @@ func StartCrawler(Action func (*Link,string,string)) {
   }
 }
 
-func HandleNewLink(L *Link, title String, body String) {
+func HandleNewLink(L *Link, title string, body string) {
   if L.Depth != MaxSearchDepth {
-    Links = getLinks(body,L.Depth)
+    Links := getLinks(body,L.Depth)
     for i,l := range Links {
       MainChannel<-l
-      StoreChannel<-l.Url
+      StoreChannel<-&l.Url
     }
   }
 }
@@ -61,8 +63,9 @@ func HandleNewLink(L *Link, title String, body String) {
 func StartStore() {
   for ;; {
     s := <-StoreChannel
-    s1 := &s
-    MainStore.insert(s)
+    s1 := *s
+    MainStore.insert(s1)
+    MainStore.Print()
   }
 }
 
@@ -77,9 +80,9 @@ func (self *Link) UrlGet() string {
 
 var RXC = regexp.MustCompile
 
-var TitleRegexp       *Regexp = RXC("<title>.*<title>")
-var MainDivHeadRegexp *Regexp = RXC("<!-- bodyContent --><div id=\"mw-content-text.*<!-- /bodyContent -->")
-var LinkRegexp         *Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
+var TitleRegexp       *regexp.Regexp = RXC("<title>.*<title>")
+var MainDivHeadRegexp *regexp.Regexp = RXC("<!-- bodyContent --><div id=\"mw-content-text.*<!-- /bodyContent -->")
+var LinkRegexp         *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
 
 // get the title from the wikipedia page
 func TitleGet(body string) string {
@@ -89,8 +92,8 @@ func TitleGet(body string) string {
 // get all Links from the content of the body of a page
 func getLinks(body string, currentdepth int) []*Link {
   content := getContent(body)
-  depth = currentdepth + 1
-  links   := LinkRegex.FindAllString(content)
+  depth := currentdepth + 1
+  links   := LinkRegexp.FindAllString(content,100)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
     retLinks[i] = &Link{strings.SplitAfterN(s,"\"",3)[1],depth}
@@ -111,18 +114,13 @@ func getContent(body string) string {
 
 // add that string to the store.
 func (self *Store) insert(name string){
-  self.insertSlice(strings.Split(name,""))
-}
-
-// helper for Store.insert(string)
-func (self *Store) insertSlice(name []rune){
   if(len(name) == 0) {
     self.isTerminal = true
   } else {
     nextChar := name[0];
     nextStore := self.Nodes[nextChar]
     if nextStore == nil {
-      nextStore = &Store{make(map[rune]Store, false}
+      nextStore = &Store{make(map[byte]*Store), false}
       self.Nodes[nextChar] = nextStore
     }
     if len(name) == 1 {
@@ -141,9 +139,9 @@ func (self *Store) Print() {
 // accumulatory helpter for store printer
 func (self *Store) PrintString(acc string) {
   if self.isTerminal {
-    fmt.PrintLine(acc)
+    fmt.Printf("%s\n",acc)
   }
-  for c,s := self.Nodes {
+  for c,s := range self.Nodes {
     s.PrintString(acc + c)
   }
 }
