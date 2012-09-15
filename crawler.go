@@ -26,7 +26,7 @@ var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
 var MainStore Store = Store{make(map[string]*Store),false}
 
-var ThreadCount int = 100
+var ThreadCount int = 10
 
 var MaxSearchDepth int = 3
 
@@ -77,6 +77,7 @@ func StartCrawler(Action func (*Link,string,string)) {
   for ;; {
     NextLink := <-WorkerChannel
     body := NextLink.UrlGet()
+    //fmt.Printf("%s",body)
     title := TitleGet(body)
     Action(NextLink,title,body)
   }
@@ -121,9 +122,10 @@ func (self *Link) UrlGet() string {
 
 var RXC = regexp.MustCompile
 
-var TitleRegexp       *regexp.Regexp = RXC("<title>.*<title>")
-var MainDivHeadRegexp *regexp.Regexp = RXC("<!-- bodyContent -->\n<div id=\"mw-content-text.*\n<!-- /bodyContent -->")
-var LinkRegexp        *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
+var TitleRegexp *regexp.Regexp = RXC("<title>.*<title>")
+var MainDivHead string = "<div id=\"mw-content-text"
+var MainDivEnd  string = "\n<!-- /bodyContent -->"
+var LinkRegexp  *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
 
 // get the title from the wikipedia page
 func TitleGet(body string) string {
@@ -136,10 +138,10 @@ func getLinks(body string, currentdepth int) []*Link {
   content := getContent(body)
   fmt.Printf("body is %s\n",content)
   depth := currentdepth + 1
-  links   := LinkRegexp.FindAllString(content,100)
+  links   := LinkRegexp.FindAllString(content,1000)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    retLinks[i] = &Link{strings.SplitAfterN(s,"\"",3)[1],depth}
+    retLinks[i] = &Link{strings.SplitN(s,"\"",3)[1],depth}
   }
   fmt.Printf("parsing complete\n")
   return retLinks
@@ -147,7 +149,11 @@ func getLinks(body string, currentdepth int) []*Link {
 
 // get the content div from a wikipedia page
 func getContent(body string) string {
-  return MainDivHeadRegexp.FindString(body)
+  //start := strings.Index(body,MainDivHead)
+  //end   := strings.Index(body,MainDivEnd)
+  //fmt.Printf("splitting body at %d,%d",start,end)
+  //return body[start:end]
+  return body
 }
 
 
