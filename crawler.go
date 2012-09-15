@@ -16,7 +16,10 @@ type Link struct {
 }
 
 
-var MainChannel chan *Link = make(chan *Link)
+var MainChannel  chan *Link = make(chan *Link)
+var StoreChannel chan *string = make(chan *string)
+
+var MainStore Store = Store{make(map[rune]*Store),false}
 
 var ThreadCount int = 100
 
@@ -28,6 +31,7 @@ func main() {
   for i := 0;i < ThreadCount; i += 1 {
     go StartCrawler(HandleNewLink)
   }
+  go StartStore()
   MainChannel<-StartLink
   return
 }
@@ -48,7 +52,17 @@ func HandleNewLink(L *Link, title String, body String) {
     Links = getLinks(body,L.Depth)
     for i,l := range Links {
       MainChannel<-l
+      StoreChannel<-l.Url
     }
+  }
+}
+
+// reads in from the store channel and adds to the store
+func StartStore() {
+  for ;; {
+    s := <-StoreChannel
+    s1 := &s
+    MainStore.insert(s)
   }
 }
 
@@ -65,6 +79,7 @@ var RXC = regexp.MustCompile
 
 var TitleRegexp       *Regexp = RXC("<title>.*<title>")
 var MainDivHeadRegexp *Regexp = RXC("<!-- bodyContent --><div id=\"mw-content-text.*<!-- /bodyContent -->")
+var LinkRegexp         *Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
 
 // get the title from the wikipedia page
 func TitleGet(body string) string {
@@ -73,7 +88,14 @@ func TitleGet(body string) string {
 
 // get all Links from the content of the body of a page
 func getLinks(body string, currentdepth int) []*Link {
-
+  content := getContent(body)
+  depth = currentdepth + 1
+  links   := LinkRegex.FindAllString(content)
+  var retLinks []*Link = make([]*Link,len(links))
+  for i,s := range links {
+    retLinks[i] = &Link{strings.SplitAfterN(s,"\"",3)[1],depth}
+  }
+  return retLinks
 }
 
 // get the content div from a wikipedia page
@@ -111,4 +133,12 @@ func (self *Store) insertSlice(name []rune){
   }
 }
 
+// prints out every string the store
+func (self *Store) Print() {
+  
+}
 
+// accumulatory helpter for store printer
+func (self *Store) PrintString(acc string) {
+
+}
