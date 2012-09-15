@@ -135,10 +135,15 @@ func (self *Store) insertSlice(name []rune){
 
 // prints out every string the store
 func (self *Store) Print() {
-  
+  self.PrintString("")
 }
 
 // accumulatory helpter for store printer
 func (self *Store) PrintString(acc string) {
-
+  if self.isTerminal {
+    fmt.PrintLine(acc)
+  }
+  for c,s := self.Nodes {
+    s.PrintString(acc + c)
+  }
 }
