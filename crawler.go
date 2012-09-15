@@ -4,11 +4,12 @@ import (
   "fmt"
   "strings"
   "regexp"
-  "strconv"
+  "net/http"
+  "io/ioutil"
 )
 
 type Store struct {
-  Nodes map[byte]*Store
+  Nodes map[string]*Store
   isTerminal bool
 }
 
@@ -18,10 +19,12 @@ type Link struct {
 }
 
 
-var MainChannel  chan *Link = make(chan *Link)
-var StoreChannel chan *string = make(chan *string)
+var WorkerChannel  chan *Link = make(chan *Link, 100)
+var StoreChannel chan *string = make(chan *string, 100)
+var ReplyChannel chan int     = make(chan int, 100)
+var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
-var MainStore Store = Store{make(map[byte]*Store),false}
+var MainStore Store = Store{make(map[string]*Store),false}
 
 var ThreadCount int = 100
 
@@ -30,19 +33,50 @@ var MaxSearchDepth int = 3
 var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
 
 func main() {
+  fmt.Printf("lauching main worker threads")
   for i := 0;i < ThreadCount; i += 1 {
     go StartCrawler(HandleNewLink)
   }
+  fmt.Printf("worker threads launched\n")
+  fmt.Printf("launching store thread\n")
   go StartStore()
-  MainChannel<-StartLink
-  for ;; {}
+  fmt.Printf("store thread launched\n")
+  fmt.Printf("starting main loop\n")
+  WorkerChannel<-StartLink
+  ResponceCount := 0
+  MaxResponce := 1
+  NextStep := 0
+  for DepthCount := 0; DepthCount <= MaxSearchDepth; DepthCount += 1 {
+    fmt.Printf("Starting Search level %d\n",DepthCount)
+    for ;ResponceCount != MaxResponce; {
+      fmt.Printf("%d\n",ResponceCount)
+      nextInt := <-ReplyChannel
+      ResponceCount += 1
+      NextStep += nextInt
+    }
+    fmt.Printf("Search at depth %d completed\n",DepthCount)
+    ResponceCount = 0
+    MaxResponce = NextStep
+    NextStep = 0
+    l := <-LinkChannel
+    suc := true
+    for ;suc; {
+      WorkerChannel<-l
+      select {
+        case l = <-LinkChannel:
+        default: suc = false
+      }
+    }
+  }
+  MainStore.Print()
+  return
 }
 
 // pulls links from the main channel
 // the action takes in the current link, the title for that page, and its
 func StartCrawler(Action func (*Link,string,string)) {
   for ;; {
-    NextLink := <-MainChannel
+    NextLink := <-WorkerChannel
     body := NextLink.UrlGet()
     title := TitleGet(body)
     Action(NextLink,title,body)
@@ -53,8 +87,9 @@ func HandleNewLink(L *Link, title string, body string) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
     for i,l := range Links {
-      MainChannel<-l
+      LinkChannel<-l
       StoreChannel<-&l.Url
+      ReplyChannel<-i+1
     }
   }
 }
@@ -69,9 +104,13 @@ func StartStore() {
   }
 }
 
+var httpClient *http.Client = &http.Client{}
 // gets the html from the given link
 func (self *Link) UrlGet() string {
-
+  resp, _ := httpClient.Get(self.Url)
+  body, _ := ioutil.ReadAll(resp.Body)
+  resp.Body.Close()
+  return string(body)
 }
 
 /////////////////////////////////////////////
@@ -117,10 +156,10 @@ func (self *Store) insert(name string){
   if(len(name) == 0) {
     self.isTerminal = true
   } else {
-    nextChar := name[0];
+    nextChar := strings.SplitN(name,"",2)[0]
     nextStore := self.Nodes[nextChar]
     if nextStore == nil {
-      nextStore = &Store{make(map[byte]*Store), false}
+      nextStore = &Store{make(map[string]*Store), false}
       self.Nodes[nextChar] = nextStore
     }
     if len(name) == 1 {
