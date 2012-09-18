@@ -24,15 +24,16 @@ var StoreChannel chan *string = make(chan *string, 100)
 var ReplyChannel chan int     = make(chan int, 100)
 var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
+
 var MainStore Store = Store{make(map[string]*Store),false}
 
-const ThreadCount int = 1
+const ThreadCount int = 100
 
 const MaxSearchDepth int = 3
 
 var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
 
-const WikiStart = "http://en.wikipedia/org"
+const WikiStart = "http://en.wikipedia.org"
 
 func main() {
   fmt.Printf("lauching main worker threads")
@@ -41,36 +42,60 @@ func main() {
   }
   fmt.Printf("worker threads launched\n")
   fmt.Printf("launching store thread\n")
+
   go StartStore()
+
   fmt.Printf("store thread launched\n")
   fmt.Printf("starting main loop\n")
+
   WorkerChannel<-StartLink
+
+  DoneChannel := make(chan bool)
+  go CleanLinkChannel(DoneChannel)
+
   ResponceCount := 0
   MaxResponce := 1
   NextStep := 0
   for DepthCount := 0; DepthCount <= MaxSearchDepth; DepthCount += 1 {
     fmt.Printf("Starting Search level %d\n",DepthCount)
     for ;ResponceCount != MaxResponce; {
-      fmt.Printf("%d\n",ResponceCount)
+//      fmt.Printf("%d\n",ResponceCount)
       nextInt := <-ReplyChannel
       ResponceCount += 1
       NextStep += nextInt
     }
-    fmt.Printf("Search at depth %d completed\n",DepthCount)
+    fmt.Printf("Search at depth %d completed, %d links returned\n",DepthCount,NextStep)
     ResponceCount = 0
     MaxResponce = NextStep
     NextStep = 0
-    suc := true
-    for ;suc; {
-      select {
-        case l := <-LinkChannel:
-            WorkerChannel<-l
-        default: suc = false
-      }
-    }
+    DoneChannel<-true
   }
   MainStore.Print()
   return
+}
+
+// pull links out of the LinkChannel into a buffer to keep the channels buffer clear
+// the channel is simply for the main loop telling this to move everything from its internal buffer
+// into the worker channel
+func CleanLinkChannel(transfer chan bool) {
+  links := make([]*Link,0,100)
+  for ;; {
+    select {
+      case l := <-LinkChannel:
+        links = append(links,l)
+      case <-transfer:
+        go TransferBuffer(links)
+        links = make([]*Link,0,100)
+    }
+  }
+}
+
+// transfers from the given buffer into the worker channel
+// call this asyncronously to avoid lockup on large number of links
+func TransferBuffer(links []*Link){
+  for _,l := range(links) {
+    WorkerChannel<-l
+  }
 }
 
 // pulls links from the main channel
@@ -94,7 +119,7 @@ func HandleNewLink(L *Link, title string, body string) {
       StoreChannel<-&l.Url
     }
     ReplyChannel<-len(Links)
-    fmt.Printf("all links returned for %s\n",L.Url)
+//    fmt.Printf("all links returned for %s\n",L.Url)
   }
 }
 
@@ -147,7 +172,7 @@ func getLinks(body string, currentdepth int) []*Link {
   for i,s := range links {
     retLinks[i] = &Link{WikiStart + strings.SplitN(s,"\"",3)[1],depth}
   }
-  fmt.Printf("parsing complete\n")
+//  fmt.Printf("parsing complete\n")
   return retLinks
 }
 
