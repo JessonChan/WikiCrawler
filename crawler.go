@@ -26,11 +26,13 @@ var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
 var MainStore Store = Store{make(map[string]*Store),false}
 
-var ThreadCount int = 10
+const ThreadCount int = 1
 
-var MaxSearchDepth int = 3
+const MaxSearchDepth int = 3
 
 var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
+
+const WikiStart = "http://en.wikipedia/org"
 
 func main() {
   fmt.Printf("lauching main worker threads")
@@ -87,7 +89,7 @@ func HandleNewLink(L *Link, title string, body string) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
     for _,l := range Links {
-      fmt.Printf("returning link %s\n",l.Url)
+//      fmt.Printf("returning link %s\n",l.Url)
       LinkChannel<-l
       StoreChannel<-&l.Url
     }
@@ -102,15 +104,17 @@ func StartStore() {
     s := <-StoreChannel
     s1 := *s
     MainStore.insert(s1)
-    MainStore.Print()
   }
 }
 
 var httpClient *http.Client = &http.Client{}
 // gets the html from the given link
 func (self *Link) UrlGet() string {
-  fmt.Printf("retreving %s\n",self.Url)
-  resp, _ := httpClient.Get(self.Url)
+  //fmt.Printf("retreving %s\n",self.Url)
+  resp, err := httpClient.Get(self.Url)
+  if err != nil {
+    return ""
+  }
   body, _ := ioutil.ReadAll(resp.Body)
   resp.Body.Close()
   return string(body)
@@ -134,14 +138,14 @@ func TitleGet(body string) string {
 
 // get all Links from the content of the body of a page
 func getLinks(body string, currentdepth int) []*Link {
-  fmt.Printf("parsing links\n")
+//  fmt.Printf("parsing links\n")
   content := getContent(body)
-  fmt.Printf("body is %s\n",content)
+//  fmt.Printf("body is %s\n",content)
   depth := currentdepth + 1
   links   := LinkRegexp.FindAllString(content,1000)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    retLinks[i] = &Link{strings.SplitN(s,"\"",3)[1],depth}
+    retLinks[i] = &Link{WikiStart + strings.SplitN(s,"\"",3)[1],depth}
   }
   fmt.Printf("parsing complete\n")
   return retLinks
