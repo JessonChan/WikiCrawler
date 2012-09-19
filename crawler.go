@@ -8,16 +8,109 @@ import (
   "io/ioutil"
 )
 
+
+
+/////////////////////////////////////////////
+// Store
+/////////////////////////////////////////////
+
+
 type Store struct {
   Nodes map[string]*Store
   isTerminal bool
+  lock Semaphore
 }
+
+// add that string to the store.
+func (self *Store) insert(name string){
+  self.Lock()
+  if(len(name) == 0) {
+    self.isTerminal = true
+  } else {
+    nextChar := strings.SplitN(name,"",2)[0]
+    nextStore := self.Nodes[nextChar]
+    if nextStore == nil {
+      nextStore = &Store{make(map[string]*Store), false,make(Semaphore)}
+      self.Nodes[nextChar] = nextStore
+    }
+    if len(name) == 1 {
+      nextStore.isTerminal = true
+    } else { 
+      self.Unlock()
+      nextStore.insert(name[1:])
+      return
+    }
+  }
+  self.Unlock()
+}
+
+// prints out every string the store
+func (self *Store) Print() {
+  self.PrintString("")
+}
+
+// accumulatory helpter for store printer
+func (self *Store) PrintString(acc string) {
+  self.Lock()
+  if self.isTerminal {
+    fmt.Printf("%s\n",acc)
+  }
+  for c,s := range self.Nodes {
+    s.PrintString(acc + c)
+  }
+  self.Unlock()
+}
+
+func (self *Store) Lock(){
+  self.lock.Lock()
+}
+
+func (self *Store) Inlock(){
+  self.lock.Unlock()
+}
+
+
+/////////////////////////////////////////////
+// Semaphores
+/////////////////////////////////////////////
+type Semaphore chan bool
+
+// acquire n resources
+func (s Semaphore) Lock() {
+  s<-false
+}
+
+// release n resources
+func (s Semaphore) Unlock() { 
+  <-s
+}
+
+/////////////////////////////////////////////
+// Links
+/////////////////////////////////////////////
 
 type Link struct {
   Url string
   Depth int
 }
 
+var httpClient *http.Client = &http.Client{}
+// gets the html from the given link
+func (self *Link) UrlGet() string {
+  //fmt.Printf("retreving %s\n",self.Url)
+  resp, err := httpClient.Get(self.Url)
+  if err != nil {
+    return ""
+  }
+  body, _ := ioutil.ReadAll(resp.Body)
+  resp.Body.Close()
+  return string(body)
+}
+
+
+/////////////////////////////////////////////
+// Main
+/////////////////////////////////////////////
 
 var WorkerChannel  chan *Link = make(chan *Link, 100)
 var StoreChannel chan *string = make(chan *string, 100)
@@ -25,7 +118,7 @@ var ReplyChannel chan int     = make(chan int, 100)
 var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
 
-var MainStore Store = Store{make(map[string]*Store),false}
+var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore)}
 
 const ThreadCount int = 100
 
@@ -132,19 +225,6 @@ func StartStore() {
   }
 }
 
-var httpClient *http.Client = &http.Client{}
-// gets the html from the given link
-func (self *Link) UrlGet() string {
-  //fmt.Printf("retreving %s\n",self.Url)
-  resp, err := httpClient.Get(self.Url)
-  if err != nil {
-    return ""
-  }
-  body, _ := ioutil.ReadAll(resp.Body)
-  resp.Body.Close()
-  return string(body)
-}
-
 /////////////////////////////////////////////
 // utilities
 /////////////////////////////////////////////
@@ -187,40 +267,3 @@ func getContent(body string) string {
 
 
 
-/////////////////////////////////////////////
-// Store
-/////////////////////////////////////////////
-
-// add that string to the store.
-func (self *Store) insert(name string){
-  if(len(name) == 0) {
-    self.isTerminal = true
-  } else {
-    nextChar := strings.SplitN(name,"",2)[0]
-    nextStore := self.Nodes[nextChar]
-    if nextStore == nil {
-      nextStore = &Store{make(map[string]*Store), false}
-      self.Nodes[nextChar] = nextStore
-    }
-    if len(name) == 1 {
-      nextStore.isTerminal = true
-    } else { 
-      nextStore.insert(name[1:])
-    }
-  }
-}
-
-// prints out every string the store
-func (self *Store) Print() {
-  self.PrintString("")
-}
-
-// accumulatory helpter for store printer
-func (self *Store) PrintString(acc string) {
-  if self.isTerminal {
-    fmt.Printf("%s\n",acc)
-  }
-  for c,s := range self.Nodes {
-    s.PrintString(acc + c)
-  }
-}
