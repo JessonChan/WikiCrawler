@@ -30,7 +30,7 @@ func (self *Store) insert(name string){
     nextChar := strings.SplitN(name,"",2)[0]
     nextStore := self.Nodes[nextChar]
     if nextStore == nil {
-      nextStore = &Store{make(map[string]*Store), false,make(Semaphore)}
+      nextStore = &Store{make(map[string]*Store), false,make(Semaphore,1)}
       self.Nodes[nextChar] = nextStore
     }
     if len(name) == 1 {
@@ -65,7 +65,7 @@ func (self *Store) Lock(){
   self.lock.Lock()
 }
 
-func (self *Store) Inlock(){
+func (self *Store) Unlock(){
   self.lock.Unlock()
 }
 
@@ -118,7 +118,7 @@ var ReplyChannel chan int     = make(chan int, 100)
 var LinkChannel  chan *Link   = make(chan *Link, 10000)
 
 
-var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore)}
+var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
 const ThreadCount int = 100
 
@@ -130,26 +130,27 @@ const WikiStart = "http://en.wikipedia.org"
 
 func main() {
   fmt.Printf("lauching main worker threads")
+
+  DoneChannel := make([]chan bool,ThreadCount)
   for i := 0;i < ThreadCount; i += 1 {
     go StartCrawler(HandleNewLink)
+    go StartStore()
+    DoneChannel[i] = make(chan bool)
+    go CleanLinkChannel(DoneChannel[i])
   }
   fmt.Printf("worker threads launched\n")
   fmt.Printf("launching store thread\n")
-
-  go StartStore()
 
   fmt.Printf("store thread launched\n")
   fmt.Printf("starting main loop\n")
 
   WorkerChannel<-StartLink
 
-  DoneChannel := make(chan bool)
-  go CleanLinkChannel(DoneChannel)
 
   ResponceCount := 0
   MaxResponce := 1
   NextStep := 0
-  for DepthCount := 0; DepthCount <= MaxSearchDepth; DepthCount += 1 {
+  for DepthCount := 1; DepthCount <= MaxSearchDepth; DepthCount += 1 {
     fmt.Printf("Starting Search level %d\n",DepthCount)
     for ;ResponceCount != MaxResponce; {
 //      fmt.Printf("%d\n",ResponceCount)
@@ -161,7 +162,9 @@ func main() {
     ResponceCount = 0
     MaxResponce = NextStep
     NextStep = 0
-    DoneChannel<-true
+    for i := 0; i < ThreadCount; i += 1 {
+      DoneChannel[i]<-true
+    }
   }
   MainStore.Print()
   return
