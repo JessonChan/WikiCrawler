@@ -6,6 +6,7 @@ import (
   "regexp"
   "net/http"
   "io/ioutil"
+  "os/signal"
 )
 
 
@@ -35,7 +36,7 @@ func (self *Store) insert(name string){
     }
     if len(name) == 1 {
       nextStore.isTerminal = true
-    } else { 
+    } else {
       self.Unlock()
       nextStore.insert(name[1:])
       return
@@ -81,7 +82,7 @@ func (s Semaphore) Lock() {
 }
 
 // release n resources
-func (s Semaphore) Unlock() { 
+func (s Semaphore) Unlock() {
   <-s
 }
 
@@ -129,12 +130,11 @@ var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
 const WikiStart = "http://en.wikipedia.org"
 
 func main() {
-  fmt.Printf("lauching main worker threads")
+  fmt.Printf("lauching main worker threads\n")
 
   DoneChannel := make([]chan bool,ThreadCount)
   for i := 0;i < ThreadCount; i += 1 {
     go StartCrawler(HandleNewLink)
-    go StartStore()
     DoneChannel[i] = make(chan bool)
     go CleanLinkChannel(DoneChannel[i])
   }
@@ -163,7 +163,7 @@ func main() {
     MaxResponce = NextStep
     NextStep = 0
     for i := 0; i < ThreadCount; i += 1 {
-      DoneChannel[i]<-true
+     DoneChannel[i]<-true
     }
   }
   MainStore.Print()
@@ -194,15 +194,18 @@ func TransferBuffer(links []*Link){
   }
 }
 
-// pulls links from the main channel
-// the action takes in the current link, the title for that page, and its
-func StartCrawler(Action func (*Link,string,string)) {
+// basic worker thread.
+func StartCrawler(action func (*Link,string,string)) {
   for ;; {
-    NextLink := <-WorkerChannel
-    body := NextLink.UrlGet()
-    //fmt.Printf("%s",body)
-    title := TitleGet(body)
-    Action(NextLink,title,body)
+    select {
+      case NextLink := <-WorkerChannel:
+        body := NextLink.UrlGet()
+        title := TitleGet(body)
+        action(NextLink,title,body)
+      case s := <-StoreChannel:
+        s1 := *s
+        MainStore.insert(s1)
+    }
   }
 }
 
@@ -216,15 +219,6 @@ func HandleNewLink(L *Link, title string, body string) {
     }
     ReplyChannel<-len(Links)
 //    fmt.Printf("all links returned for %s\n",L.Url)
-  }
-}
-
-// reads in from the store channel and adds to the store
-func StartStore() {
-  for ;; {
-    s := <-StoreChannel
-    s1 := *s
-    MainStore.insert(s1)
   }
 }
 
@@ -270,3 +264,13 @@ func getContent(body string) string {
 
 
 
+/////////////////////////////////////////////
+// interupt handler
+/////////////////////////////////////////////
+
+var interuptc chan os.Signal = make(chan os.Signal,1)
+signal.Notify(interuptc, os.Interrupt)
+go func () {
+  <-interuptc
+  panic
+}
