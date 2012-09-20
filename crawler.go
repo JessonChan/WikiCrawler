@@ -7,6 +7,8 @@ import (
   "net/http"
   "io/ioutil"
   "os/signal"
+  "os"
+  "time"
 )
 
 
@@ -112,16 +114,15 @@ func (self *Link) UrlGet() string {
 /////////////////////////////////////////////
 // Main
 /////////////////////////////////////////////
+const ThreadCount int = 100
 
-var WorkerChannel  chan *Link = make(chan *Link, 100)
-var StoreChannel chan *string = make(chan *string, 100)
-var ReplyChannel chan int     = make(chan int, 100)
-var LinkChannel  chan *Link   = make(chan *Link, 10000)
-
+var WorkerChannel  chan *Link = make(chan *Link, ThreadCount)
+var StoreChannel chan *string = make(chan *string, ThreadCount*3)
+var ReplyChannel chan int     = make(chan int, ThreadCount)
+var LinkChannel  chan *Link   = make(chan *Link, ThreadCount*10)
 
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
-const ThreadCount int = 100
 
 const MaxSearchDepth int = 3
 
@@ -130,6 +131,13 @@ var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
 const WikiStart = "http://en.wikipedia.org"
 
 func main() {
+  go func () {
+    var interuptc chan os.Signal = make(chan os.Signal,1)
+    signal.Notify(interuptc, os.Interrupt)
+    <-interuptc
+    panic(fmt.Sprintf("Showing stack traces\n"))
+  }()
+
   fmt.Printf("lauching main worker threads\n")
 
   DoneChannel := make([]chan bool,ThreadCount)
@@ -166,6 +174,11 @@ func main() {
      DoneChannel[i]<-true
     }
   }
+  time.Sleep(100*time.Millisecond)
+  for i := 0; i < ThreadCount; i += 1 {
+    DoneChannel[i]<-true
+  }
+  time.Sleep(100*time.Millisecond)
   MainStore.Print()
   return
 }
@@ -197,15 +210,10 @@ func TransferBuffer(links []*Link){
 // basic worker thread.
 func StartCrawler(action func (*Link,string,string)) {
   for ;; {
-    select {
-      case NextLink := <-WorkerChannel:
-        body := NextLink.UrlGet()
-        title := TitleGet(body)
-        action(NextLink,title,body)
-      case s := <-StoreChannel:
-        s1 := *s
-        MainStore.insert(s1)
-    }
+    NextLink := <-WorkerChannel
+    body := NextLink.UrlGet()
+    title := TitleGet(body)
+    action(NextLink,title,body)
   }
 }
 
@@ -215,7 +223,7 @@ func HandleNewLink(L *Link, title string, body string) {
     for _,l := range Links {
 //      fmt.Printf("returning link %s\n",l.Url)
       LinkChannel<-l
-      StoreChannel<-&l.Url
+      MainStore.insert(l.Url)
     }
     ReplyChannel<-len(Links)
 //    fmt.Printf("all links returned for %s\n",L.Url)
@@ -262,15 +270,3 @@ func getContent(body string) string {
   return body
 }
 
-
-
-/////////////////////////////////////////////
-// interupt handler
-/////////////////////////////////////////////
-
-var interuptc chan os.Signal = make(chan os.Signal,1)
-signal.Notify(interuptc, os.Interrupt)
-go func () {
-  <-interuptc
-  panic
-}
