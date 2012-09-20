@@ -9,6 +9,7 @@ import (
   "os/signal"
   "os"
   "time"
+  "flag"
 )
 
 
@@ -64,15 +65,36 @@ func (self *Store) PrintString(acc string) {
   self.Unlock()
 }
 
+// lock this node of the store. does not lock its children
 func (self *Store) Lock(){
   self.lock.Lock()
 }
 
+// unlock this node of the store. does not unlock its children
 func (self *Store) Unlock(){
   self.lock.Unlock()
 }
 
+// get the number of strings in the store
+func (self *Store) Size() int {
+  return self.size(0)
+}
 
+// get the number of strings in the store using an accumulator
+func (self *Store) size(acc int) int {
+  self.Lock()
+  if self.isTerminal {
+    acc += 1
+  }
+
+  for _, node := range self.Nodes {
+    acc = node.size(acc)
+  }
+
+  self.Unlock()
+
+  return acc
+}
 /////////////////////////////////////////////
 // Semaphores
 /////////////////////////////////////////////
@@ -114,23 +136,24 @@ func (self *Link) UrlGet() string {
 /////////////////////////////////////////////
 // Main
 /////////////////////////////////////////////
-const ThreadCount int = 100
+var ThreadCount int
+var MaxSearchDepth int
 
-var WorkerChannel  chan *Link = make(chan *Link, ThreadCount)
-var StoreChannel chan *string = make(chan *string, ThreadCount*3)
-var ReplyChannel chan int     = make(chan int, ThreadCount)
-var LinkChannel  chan *Link   = make(chan *Link, ThreadCount*10)
+var WorkerChannel  chan *Link
+var StoreChannel chan *string
+var ReplyChannel chan int
+var LinkChannel  chan *Link
 
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
-
-
-const MaxSearchDepth int = 3
 
 var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
 
 const WikiStart = "http://en.wikipedia.org"
 
 func main() {
+
+  ParseCommandLine()
+
   go func () {
     var interuptc chan os.Signal = make(chan os.Signal,1)
     signal.Notify(interuptc, os.Interrupt)
@@ -174,13 +197,32 @@ func main() {
      DoneChannel[i]<-true
     }
   }
+
   time.Sleep(100*time.Millisecond)
   for i := 0; i < ThreadCount; i += 1 {
     DoneChannel[i]<-true
   }
   time.Sleep(100*time.Millisecond)
+
   MainStore.Print()
+  fmt.Printf("size: %d\n",MainStore.Size())
   return
+}
+
+// gets used command line arguments
+func ParseCommandLine() {
+  ThreadCountFlag := flag.Int("t",100,"specifies number of worker threads spawned")
+  MaxSearchDepthFlag := flag.Int("d",3,"specifies the search depth. < 0 will never terminate")
+
+  flag.Parse()
+
+  ThreadCount = *ThreadCountFlag
+  MaxSearchDepth = *MaxSearchDepthFlag
+
+  WorkerChannel = make(chan *Link, ThreadCount)
+  StoreChannel  = make(chan *string, ThreadCount*3)
+  ReplyChannel  = make(chan int, ThreadCount)
+  LinkChannel   = make(chan *Link, ThreadCount*10)
 }
 
 // pull links out of the LinkChannel into a buffer to keep the channels buffer clear
