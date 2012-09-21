@@ -82,11 +82,11 @@ func (self *Store) Size() int {
 
 // get the number of strings in the store using an accumulator
 func (self *Store) size(acc int) int {
-  self.Lock()
   if self.isTerminal {
     acc += 1
   }
 
+  self.Lock()
   for _, node := range self.Nodes {
     acc = node.size(acc)
   }
@@ -94,6 +94,21 @@ func (self *Store) size(acc int) int {
   self.Unlock()
 
   return acc
+}
+
+// does this contain the given string?
+func (self *Store) contain(s string) bool {
+  if s == "" {
+    return self.isTerminal
+  }
+
+  self.Lock()
+  subnode := self.Nodes[s[0:1]]
+  self.Unlock()
+  if subnode != nil {
+    return subnode.contain(s[1:])
+  }
+  return false
 }
 /////////////////////////////////////////////
 // Semaphores
@@ -194,7 +209,7 @@ func main() {
     MaxResponce = NextStep
     NextStep = 0
     for i := 0; i < ThreadCount; i += 1 {
-     DoneChannel[i]<-true
+      DoneChannel[i]<-true
     }
   }
 
@@ -262,12 +277,16 @@ func StartCrawler(action func (*Link,string,string)) {
 func HandleNewLink(L *Link, title string, body string) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
+    count := 0
     for _,l := range Links {
 //      fmt.Printf("returning link %s\n",l.Url)
-      LinkChannel<-l
-      MainStore.insert(l.Url)
+      if !MainStore.contain(l.Url) {
+        LinkChannel<-l
+        MainStore.insert(l.Url)
+        count += 1
+      }
     }
-    ReplyChannel<-len(Links)
+    ReplyChannel<-count
 //    fmt.Printf("all links returned for %s\n",L.Url)
   }
 }
@@ -297,7 +316,8 @@ func getLinks(body string, currentdepth int) []*Link {
   links   := LinkRegexp.FindAllString(content,1000)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    retLinks[i] = &Link{WikiStart + strings.SplitN(s,"\"",3)[1],depth}
+    name := WikiStart + strings.SplitN(s,"\"",3)[1]
+    retLinks[i] = &Link{name,depth}
   }
 //  fmt.Printf("parsing complete\n")
   return retLinks
