@@ -8,7 +8,6 @@ import (
   "io/ioutil"
   "os/signal"
   "os"
-  "time"
   "flag"
 )
 
@@ -154,20 +153,23 @@ func (self *Link) UrlGet() string {
 var ThreadCount int
 var MaxSearchDepth int
 
-var WorkerChannel  chan *Link
-var StoreChannel chan *string
-var ReplyChannel chan int
-var LinkChannel  chan *Link
+var ThreadLocker Semaphore
 
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
-var StartLink *Link = &Link{"http://en.wikipedia.org/wiki/Adolf_Hitler",0}
+var StartLink *Link
+var StartUrl string = "http://en.wikipedia.org/wiki/Adolf_Hitler"
 
 const WikiStart = "http://en.wikipedia.org"
+
+const ThreadCountDesc string = "specifies number of worker threads spawned"
+const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
 
 func main() {
 
   ParseCommandLine()
+
+  fmt.Printf("scanning %s\n",StartLink.Url)
 
   go func () {
     var interuptc chan os.Signal = make(chan os.Signal,1)
@@ -176,118 +178,77 @@ func main() {
     panic(fmt.Sprintf("Showing stack traces\n"))
   }()
 
-  fmt.Printf("lauching main worker threads\n")
+  values := make([]*Link,1)
+  values[0] = StartLink
 
-  DoneChannel := make([]chan bool,ThreadCount)
-  for i := 0;i < ThreadCount; i += 1 {
-    go StartCrawler(HandleNewLink)
-    DoneChannel[i] = make(chan bool)
-    go CleanLinkChannel(DoneChannel[i])
-  }
-  fmt.Printf("worker threads launched\n")
-  fmt.Printf("launching store thread\n")
+  resultChannel := make(chan []*Link)
 
-  fmt.Printf("store thread launched\n")
-  fmt.Printf("starting main loop\n")
-
-  WorkerChannel<-StartLink
-
-
-  ResponceCount := 0
-  MaxResponce := 1
-  NextStep := 0
-  for DepthCount := 1; DepthCount <= MaxSearchDepth; DepthCount += 1 {
-    fmt.Printf("Starting Search level %d\n",DepthCount)
-    for ;ResponceCount != MaxResponce; {
-//      fmt.Printf("%d\n",ResponceCount)
-      nextInt := <-ReplyChannel
-      ResponceCount += 1
-      NextStep += nextInt
+  for i := 0; i < MaxSearchDepth; i += 1 {
+    fmt.Printf("starting sweap of depth %d\n",i)
+    go StartThreads(values,resultChannel)
+    results := len(values)
+    values = make([]*Link,0)
+    for i := 0; i < results; i += 1 {
+      newValues := <-resultChannel
+      for _,l := range newValues {
+        values = append(values,l)
+      }
     }
-    fmt.Printf("Search at depth %d completed, %d links returned\n",DepthCount,NextStep)
-    ResponceCount = 0
-    MaxResponce = NextStep
-    NextStep = 0
-    for i := 0; i < ThreadCount; i += 1 {
-      DoneChannel[i]<-true
-    }
+    fmt.Printf("finish sweap of depth %d, %d links found\n",i,len(values))
   }
 
-  time.Sleep(100*time.Millisecond)
-  for i := 0; i < ThreadCount; i += 1 {
-    DoneChannel[i]<-true
-  }
-  time.Sleep(100*time.Millisecond)
-
-  MainStore.Print()
-  fmt.Printf("size: %d\n",MainStore.Size())
+  //MainStore.Print()
   return
 }
 
+var StartUrlDesc string = ""
+
 // gets used command line arguments
 func ParseCommandLine() {
-  ThreadCountFlag := flag.Int("t",100,"specifies number of worker threads spawned")
-  MaxSearchDepthFlag := flag.Int("d",3,"specifies the search depth. < 0 will never terminate")
+  ThreadCountFlag := flag.Int("t",100,ThreadCountDesc)
+  MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
+  StartUrlFlag := flag.String("s",StartUrl,StartUrlDesc)
 
   flag.Parse()
 
   ThreadCount = *ThreadCountFlag
   MaxSearchDepth = *MaxSearchDepthFlag
 
-  WorkerChannel = make(chan *Link, ThreadCount)
-  StoreChannel  = make(chan *string, ThreadCount*3)
-  ReplyChannel  = make(chan int, ThreadCount)
-  LinkChannel   = make(chan *Link, ThreadCount*10)
+  StartLink = &Link{*StartUrlFlag,0}
+
+  ThreadLocker = make(Semaphore,ThreadCount)
 }
 
-// pull links out of the LinkChannel into a buffer to keep the channels buffer clear
-// the channel is simply for the main loop telling this to move everything from its internal buffer
-// into the worker channel
-func CleanLinkChannel(transfer chan bool) {
-  links := make([]*Link,0,100)
-  for ;; {
-    select {
-      case l := <-LinkChannel:
-        links = append(links,l)
-      case <-transfer:
-        go TransferBuffer(links)
-        links = make([]*Link,0,100)
-    }
+// Start threads for each link
+func StartThreads(values []*Link, ret chan []*Link){
+  for _,l := range values {
+    StartCrawler(l,ret)
   }
 }
 
-// transfers from the given buffer into the worker channel
-// call this asyncronously to avoid lockup on large number of links
-func TransferBuffer(links []*Link){
-  for _,l := range(links) {
-    WorkerChannel<-l
-  }
+// Attempts to start a new crawler thread. 
+// Blocks if maximum thread count has been reached
+func StartCrawler(NextLink *Link, ret chan []*Link){
+  ThreadLocker.Lock()
+  go StartThread(NextLink,ret)
 }
 
 // basic worker thread.
-func StartCrawler(action func (*Link,string,string)) {
-  for ;; {
-    NextLink := <-WorkerChannel
+func StartThread(NextLink *Link, ret chan []*Link){
     body := NextLink.UrlGet()
     title := TitleGet(body)
-    action(NextLink,title,body)
-  }
+    HandleNewLink(NextLink,title,body,ret)
 }
 
-func HandleNewLink(L *Link, title string, body string) {
+// function for parsing a link
+func HandleNewLink(L *Link, title string, body string, ret chan []*Link) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
-    count := 0
     for _,l := range Links {
-//      fmt.Printf("returning link %s\n",l.Url)
-      if !MainStore.contain(l.Url) {
-        LinkChannel<-l
-        MainStore.insert(l.Url)
-        count += 1
-      }
+      MainStore.insert(l.Url)
     }
-    ReplyChannel<-count
-//    fmt.Printf("all links returned for %s\n",L.Url)
+    ret<-Links
+    ThreadLocker.Unlock()
   }
 }
 
@@ -309,17 +270,14 @@ func TitleGet(body string) string {
 
 // get all Links from the content of the body of a page
 func getLinks(body string, currentdepth int) []*Link {
-//  fmt.Printf("parsing links\n")
   content := getContent(body)
-//  fmt.Printf("body is %s\n",content)
   depth := currentdepth + 1
-  links   := LinkRegexp.FindAllString(content,1000)
+  links   := LinkRegexp.FindAllString(content,-1)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
     name := WikiStart + strings.SplitN(s,"\"",3)[1]
     retLinks[i] = &Link{name,depth}
   }
-//  fmt.Printf("parsing complete\n")
   return retLinks
 }
 
@@ -331,4 +289,3 @@ func getContent(body string) string {
   //return body[start:end]
   return body
 }
-
