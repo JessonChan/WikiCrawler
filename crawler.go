@@ -158,12 +158,14 @@ var ThreadLocker Semaphore
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
 var StartLink *Link
-var StartUrl string = "http://en.wikipedia.org/wiki/Adolf_Hitler"
+var StartUrl string = "/wiki/Adolf_Hitler"
 
-const UrlStart = "http://en.wikipedia.org"
+var UrlStart = "http://en.wikipedia.org"
 
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
+const StartUrlDesc string = "the path to start with"
+const UrlStartDesc string = "the base url for all requests"
 
 func main() {
 
@@ -202,20 +204,21 @@ func main() {
   return
 }
 
-var StartUrlDesc string = ""
 
 // gets used command line arguments
 func ParseCommandLine() {
   ThreadCountFlag := flag.Int("t",100,ThreadCountDesc)
   MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
   StartUrlFlag := flag.String("s",StartUrl,StartUrlDesc)
-
+  UrlStartFlag := flag.String("p",UrlStart,UrlStartDesc)
   flag.Parse()
 
   ThreadCount = *ThreadCountFlag
   MaxSearchDepth = *MaxSearchDepthFlag
+  UrlStart = *UrlStartFlag
+  StartUrl = UrlStart + *StartUrlFlag
 
-  StartLink = &Link{*StartUrlFlag,0}
+  StartLink = &Link{StartUrl,0}
 
   ThreadLocker = make(Semaphore,ThreadCount)
 }
