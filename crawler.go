@@ -159,6 +159,8 @@ var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
 var StartLink *Link
 var StartUrl string = "/wiki/Adolf_Hitler"
+var NoRepeat bool = true;
+var LinkRegex = "/wiki/.*"
 
 var UrlStart = "http://en.wikipedia.org"
 
@@ -166,12 +168,26 @@ const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
 const StartUrlDesc string = "the path to start with"
 const UrlStartDesc string = "the base url for all requests"
+const NoRepeatDesc string = "Repeat links that have been seen before"
+const LinkRegexDesc = "What regex should be used to match all links?"
+
+var RXC = regexp.MustCompile
+
+var TitleRegexp *regexp.Regexp = RXC("<title>.*<title>")
+var MainDivHead string = "<div id=\"mw-content-text"
+var MainDivEnd  string = "\n<!-- /bodyContent -->"
+var LinkRegexp  *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
 
 func main() {
 
   ParseCommandLine()
 
   fmt.Printf("scanning %s\n",StartLink.Url)
+  if NoRepeat {
+    fmt.Printf("will not repeat links\n")
+  } else {
+    fmt.Printf("will repeat links\n")
+  }
 
   go func () {
     var interuptc chan os.Signal = make(chan os.Signal,1)
@@ -207,10 +223,13 @@ func main() {
 
 // gets used command line arguments
 func ParseCommandLine() {
-  ThreadCountFlag := flag.Int("t",100,ThreadCountDesc)
+  ThreadCountFlag    := flag.Int("t",100,ThreadCountDesc)
   MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
-  StartUrlFlag := flag.String("p",StartUrl,StartUrlDesc)
-  UrlStartFlag := flag.String("u",UrlStart,UrlStartDesc)
+  StartUrlFlag       := flag.String("p",StartUrl,StartUrlDesc)
+  UrlStartFlag       := flag.String("u",UrlStart,UrlStartDesc)
+  NoRepeatFlag       := flag.Bool("r",false,NoRepeatDesc)
+  LinkRegexFlag      := flag.String("l",LinkRegex,LinkRegexDesc)
+
   flag.Parse()
 
   ThreadCount = *ThreadCountFlag
@@ -219,6 +238,13 @@ func ParseCommandLine() {
   StartUrl = UrlStart + *StartUrlFlag
 
   StartLink = &Link{StartUrl,0}
+
+  NoRepeat = !*NoRepeatFlag
+
+  LinkRegex = *LinkRegexFlag
+  regex := "<a href=\"" + LinkRegex + "\".*>.*</a>"
+  fmt.Printf("using %s as link regex",regex)
+  LinkRegexp = RXC(regex)
 
   ThreadLocker = make(Semaphore,ThreadCount)
 }
@@ -248,6 +274,9 @@ func StartThread(NextLink *Link, ret chan []*Link){
 func HandleNewLink(L *Link, title string, body string, ret chan []*Link) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
+    if NoRepeat {
+      Links = PruneDups(Links)
+    }
     for _,l := range Links {
       MainStore.insert(l.Url)
     }
@@ -256,17 +285,20 @@ func HandleNewLink(L *Link, title string, body string, ret chan []*Link) {
   }
 }
 
+// remove all elements already seen in the main store
+func PruneDups(links []*Link) []*Link {
+  ret := make([]*Link,0)
+  for _,l := range links {
+    if !MainStore.contain(l.Url) {
+      ret = append(ret,l)
+    }
+  }
+  return ret
+}
+
 /////////////////////////////////////////////
 // utilities
 /////////////////////////////////////////////
-
-var RXC = regexp.MustCompile
-
-var TitleRegexp *regexp.Regexp = RXC("<title>.*<title>")
-var MainDivHead string = "<div id=\"mw-content-text"
-var MainDivEnd  string = "\n<!-- /bodyContent -->"
-var LinkRegexp  *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
-
 // get the title from the wikipedia page
 func TitleGet(body string) string {
   return TitleRegexp.FindString(body)
