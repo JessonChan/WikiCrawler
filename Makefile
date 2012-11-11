@@ -1,6 +1,8 @@
-all: clean
-		go build crawler.go
+all: build
+		./crawler
 
 clean:
 		go clean
 
+build: clean
+		go build crawler.go
