@@ -161,13 +161,13 @@ var StartLink *Link
 var StartUrl string = "/wiki/Adolf_Hitler"
 var NoRepeat bool = true;
 var LinkRegex = "/wiki/.*"
-var UrlStart = "http://en.wikipedia.org"
+var UrlPrefix = "http://en.wikipedia.org"
 var IsDebugging bool = false
 
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
 const StartUrlDesc string = "the path to start with"
-const UrlStartDesc string = "the base url for all requests, including the first"
+const UrlPrefixDesc string = "the base url for all requests, including the first"
 const NoRepeatDesc string = "Repeat links that have been seen before"
 const LinkRegexDesc = "What regex should be used to match all links?"
 const IsDebuggingDesc = "Enter Debug Mode"
@@ -177,7 +177,7 @@ var RXC = regexp.MustCompile
 var TitleRegexp *regexp.Regexp = RXC("<title>.*<title>")
 var MainDivHead string = "<div id=\"mw-content-text"
 var MainDivEnd  string = "\n<!-- /bodyContent -->"
-var LinkRegexp  *regexp.Regexp = RXC("<a href=\"/wiki/.*\".*>.*</a>")
+var LinkRegexp  *regexp.Regexp
 
 func main() {
 
@@ -191,12 +191,7 @@ func main() {
   }
 
   if IsDebugging {
-    go func () {
-      var interuptc chan os.Signal = make(chan os.Signal,1)
-        signal.Notify(interuptc, os.Interrupt)
-        <-interuptc
-        panic(fmt.Sprintf("Showing stack traces\n"))
-    }()
+    StartInteruptHandler()
   }
 
   values := make([]*Link,1)
@@ -223,36 +218,36 @@ func main() {
   return
 }
 
-
 // gets used command line arguments
 func ParseCommandLine() {
-  ThreadCountFlag    := flag.Int("t",100,ThreadCountDesc)
+  flag.IntVar(&ThreadCount,"t",100,ThreadCountDesc)
+  flag.StringVar(&UrlPrefix,"u",UrlPrefix,UrlPrefixDesc)
+  flag.StringVar(&LinkRegex,"l",LinkRegex,LinkRegexDesc)
+  flag.BoolVar(&IsDebugging,"debug",IsDebugging,IsDebuggingDesc)
   MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
   StartUrlFlag       := flag.String("p",StartUrl,StartUrlDesc)
-  UrlStartFlag       := flag.String("u",UrlStart,UrlStartDesc)
   NoRepeatFlag       := flag.Bool("r",false,NoRepeatDesc)
-  LinkRegexFlag      := flag.String("l",LinkRegex,LinkRegexDesc)
-  IsDebuggingFlag    := flag.Bool("debug",IsDebugging,IsDebuggingDesc)
 
   flag.Parse()
 
-  ThreadCount = *ThreadCountFlag
   MaxSearchDepth = *MaxSearchDepthFlag + 1
-  UrlStart = *UrlStartFlag
-  StartUrl = UrlStart + *StartUrlFlag
-
+  StartUrl = UrlPrefix + *StartUrlFlag
   StartLink = &Link{StartUrl,0}
-
   NoRepeat = !*NoRepeatFlag
 
-  LinkRegex = *LinkRegexFlag
-  regex := "<a href=\"" + LinkRegex + "\".*>.*</a>"
-  fmt.Printf("using %s as link regex\n",regex)
-  LinkRegexp = RXC(regex)
-
-  IsDebugging = *IsDebuggingFlag
+  LinkRegexp = RXC("<a href=\"" + LinkRegex + "\".*>.*</a>")
 
   ThreadLocker = make(Semaphore,ThreadCount)
+}
+
+// start interupt handler
+func StartInteruptHandler(){
+  go func () {
+    var interuptc chan os.Signal = make(chan os.Signal,1)
+      signal.Notify(interuptc, os.Interrupt)
+      <-interuptc
+      panic(fmt.Sprintf("Showing stack traces\n"))
+  }()
 }
 
 // Start threads for each link
@@ -317,7 +312,7 @@ func getLinks(body string, currentdepth int) []*Link {
   links   := LinkRegexp.FindAllString(content,-1)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    name := UrlStart + strings.SplitN(s,"\"",3)[1]
+    name := UrlPrefix + strings.SplitN(s,"\"",3)[1]
     retLinks[i] = &Link{name,depth}
   }
   return retLinks
