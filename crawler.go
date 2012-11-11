@@ -209,8 +209,8 @@ func main() {
 func ParseCommandLine() {
   ThreadCountFlag := flag.Int("t",100,ThreadCountDesc)
   MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
-  StartUrlFlag := flag.String("s",StartUrl,StartUrlDesc)
-  UrlStartFlag := flag.String("p",UrlStart,UrlStartDesc)
+  StartUrlFlag := flag.String("p",StartUrl,StartUrlDesc)
+  UrlStartFlag := flag.String("u",UrlStart,UrlStartDesc)
   flag.Parse()
 
   ThreadCount = *ThreadCountFlag
