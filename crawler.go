@@ -9,6 +9,7 @@ import (
   "os/signal"
   "os"
   "flag"
+  "time"
 )
 
 
@@ -183,6 +184,7 @@ func main() {
   resultChannel := make(chan []*Link)
 
   for i := 0; i < MaxSearchDepth; i += 1 {
+    start := time.Now()
     fmt.Printf("starting sweap of depth %d\n",i)
     go StartThreads(values,resultChannel)
     results := len(values)
@@ -193,7 +195,7 @@ func main() {
         values = append(values,l)
       }
     }
-    fmt.Printf("finish sweap of depth %d, %d links found\n",i,len(values))
+    fmt.Printf("finish sweap of depth %d in %v, %d links found\n",i,time.Now().Sub(start),len(values))
   }
 
   //MainStore.Print()
