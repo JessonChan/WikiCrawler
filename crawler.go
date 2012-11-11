@@ -159,7 +159,7 @@ var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 var StartLink *Link
 var StartUrl string = "http://en.wikipedia.org/wiki/Adolf_Hitler"
 
-const WikiStart = "http://en.wikipedia.org"
+const UrlStart = "http://en.wikipedia.org"
 
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
@@ -274,7 +274,7 @@ func getLinks(body string, currentdepth int) []*Link {
   links   := LinkRegexp.FindAllString(content,-1)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    name := WikiStart + strings.SplitN(s,"\"",3)[1]
+    name := UrlStart + strings.SplitN(s,"\"",3)[1]
     retLinks[i] = &Link{name,depth}
   }
   return retLinks
