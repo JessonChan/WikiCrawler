@@ -133,10 +133,9 @@ type Link struct {
   Depth int
 }
 
-var httpClient *http.Client = &http.Client{}
 // gets the html from the given link
 func (self *Link) UrlGet() string {
-  //fmt.Printf("retreving %s\n",self.Url)
+  var httpClient *http.Client = &http.Client{}
   resp, err := httpClient.Get(self.Url)
   if err != nil {
     return ""
