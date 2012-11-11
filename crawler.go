@@ -167,7 +167,7 @@ var UrlStart = "http://en.wikipedia.org"
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
 const StartUrlDesc string = "the path to start with"
-const UrlStartDesc string = "the base url for all requests"
+const UrlStartDesc string = "the base url for all requests, including the first"
 const NoRepeatDesc string = "Repeat links that have been seen before"
 const LinkRegexDesc = "What regex should be used to match all links?"
 
@@ -243,7 +243,7 @@ func ParseCommandLine() {
 
   LinkRegex = *LinkRegexFlag
   regex := "<a href=\"" + LinkRegex + "\".*>.*</a>"
-  fmt.Printf("using %s as link regex",regex)
+  fmt.Printf("using %s as link regex\n",regex)
   LinkRegexp = RXC(regex)
 
   ThreadLocker = make(Semaphore,ThreadCount)
