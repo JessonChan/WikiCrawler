@@ -161,8 +161,8 @@ var StartLink *Link
 var StartUrl string = "/wiki/Adolf_Hitler"
 var NoRepeat bool = true;
 var LinkRegex = "/wiki/.*"
-
 var UrlStart = "http://en.wikipedia.org"
+var IsDebugging bool = false
 
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
@@ -170,6 +170,7 @@ const StartUrlDesc string = "the path to start with"
 const UrlStartDesc string = "the base url for all requests, including the first"
 const NoRepeatDesc string = "Repeat links that have been seen before"
 const LinkRegexDesc = "What regex should be used to match all links?"
+const IsDebuggingDesc = "Enter Debug Mode"
 
 var RXC = regexp.MustCompile
 
@@ -189,12 +190,14 @@ func main() {
     fmt.Printf("will repeat links\n")
   }
 
-  go func () {
-    var interuptc chan os.Signal = make(chan os.Signal,1)
-    signal.Notify(interuptc, os.Interrupt)
-    <-interuptc
-    panic(fmt.Sprintf("Showing stack traces\n"))
-  }()
+  if IsDebugging {
+    go func () {
+      var interuptc chan os.Signal = make(chan os.Signal,1)
+        signal.Notify(interuptc, os.Interrupt)
+        <-interuptc
+        panic(fmt.Sprintf("Showing stack traces\n"))
+    }()
+  }
 
   values := make([]*Link,1)
   values[0] = StartLink
@@ -229,11 +232,12 @@ func ParseCommandLine() {
   UrlStartFlag       := flag.String("u",UrlStart,UrlStartDesc)
   NoRepeatFlag       := flag.Bool("r",false,NoRepeatDesc)
   LinkRegexFlag      := flag.String("l",LinkRegex,LinkRegexDesc)
+  IsDebuggingFlag    := flag.Bool("debug",IsDebugging,IsDebuggingDesc)
 
   flag.Parse()
 
   ThreadCount = *ThreadCountFlag
-  MaxSearchDepth = *MaxSearchDepthFlag
+  MaxSearchDepth = *MaxSearchDepthFlag + 1
   UrlStart = *UrlStartFlag
   StartUrl = UrlStart + *StartUrlFlag
 
@@ -245,6 +249,8 @@ func ParseCommandLine() {
   regex := "<a href=\"" + LinkRegex + "\".*>.*</a>"
   fmt.Printf("using %s as link regex\n",regex)
   LinkRegexp = RXC(regex)
+
+  IsDebugging = *IsDebuggingFlag
 
   ThreadLocker = make(Semaphore,ThreadCount)
 }
