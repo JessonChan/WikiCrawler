@@ -275,6 +275,10 @@ func StartThread(NextLink *Link, ret chan []*Link){
 func HandleNewLink(L *Link, title string, body string, ret chan []*Link) {
   if L.Depth != MaxSearchDepth {
     Links := getLinks(body,L.Depth)
+    if IsDebugging && len(Links) == 0{
+      fmt.Printf("No links found for %s\n",L.Url)
+      fmt.Printf("Body was:\n%s",body)
+    }
     if NoRepeat {
       Links = PruneDups(Links)
     }
