@@ -137,15 +137,32 @@ type Link struct {
 // gets the html from the given link
 func (self *Link) UrlGet() string {
   var httpClient *http.Client = &http.Client{}
-  resp, err := httpClient.Get(self.Url)
-  if err != nil {
-    return ""
+  for ;; {
+    resp, err := httpClient.Get(self.Url)
+    if err != nil {
+      resp.Body.Close()
+      if IsDebugging {
+        fmt.Printf("error getting page %s\n error was:%+v\n",self.Url,err)
+      }
+      if IsFailure(err) {
+        return ""
+      } else {
+        time.Sleep(10 * time.Millisecond)
+      }
+    } else {
+      body, _ := ioutil.ReadAll(resp.Body)
+      resp.Body.Close()
+      return string(body)
+    }
   }
-  body, _ := ioutil.ReadAll(resp.Body)
-  resp.Body.Close()
-  return string(body)
+  // should never get here
+  return ""
 }
 
+// is this an error not caused by request overload
+func IsFailure(err error) bool {
+  return !strings.Contains(err.Error(),"too many open files") && !strings.Contains(err.Error(),"Temporary failure in name resolution")
+}
 
 /////////////////////////////////////////////
 // Main
