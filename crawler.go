@@ -140,7 +140,6 @@ func (self *Link) UrlGet() string {
   for ;; {
     resp, err := httpClient.Get(self.Url)
     if err != nil {
-      resp.Body.Close()
       if IsDebugging {
         fmt.Printf("error getting page %s\n error was:%+v\n",self.Url,err)
       }
