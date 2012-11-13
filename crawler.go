@@ -174,19 +174,18 @@ var ThreadLocker Semaphore
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
 var StartLink *Link
-var StartUrl string = "/wiki/Adolf_Hitler"
 var NoRepeat bool = true;
 var LinkRegex = "/wiki/.*"
-var UrlPrefix = "http://en.wikipedia.org"
+var UrlPrefix string
+var StartUrl string = "http://en.wikipedia.org/wiki/Adolf_Hitler"
 var IsDebugging bool = false
 
 const ThreadCountDesc string = "specifies number of worker threads spawned"
 const MaxSearchDesc   string = "specifies the search depth. < 0 will never terminate"
-const StartUrlDesc string = "the path to start with"
-const UrlPrefixDesc string = "the base url for all requests, including the first"
-const NoRepeatDesc string = "Repeat links that have been seen before"
-const LinkRegexDesc = "What regex should be used to match all links?"
-const IsDebuggingDesc = "Enter Debug Mode"
+const StartUrlDesc    string = "Url to Start at"
+const NoRepeatDesc    string = "Repeat links that have been seen before"
+const LinkRegexDesc   string = "What regex should be used to match all links?"
+const IsDebuggingDesc string = "Enter Debug Mode"
 
 var RXC = regexp.MustCompile
 
@@ -194,6 +193,7 @@ var TitleRegexp *regexp.Regexp = RXC("<title>.*<title>")
 var MainDivHead string = "<div id=\"mw-content-text"
 var MainDivEnd  string = "\n<!-- /bodyContent -->"
 var LinkRegexp  *regexp.Regexp
+var IsLocalRegexp *regexp.Regexp = RXC("^/")
 
 func main() {
 
@@ -237,22 +237,31 @@ func main() {
 // gets used command line arguments
 func ParseCommandLine() {
   flag.IntVar(&ThreadCount,"t",100,ThreadCountDesc)
-  flag.StringVar(&UrlPrefix,"u",UrlPrefix,UrlPrefixDesc)
+  flag.StringVar(&StartUrl,"u",StartUrl,StartUrlDesc)
   flag.StringVar(&LinkRegex,"l",LinkRegex,LinkRegexDesc)
   flag.BoolVar(&IsDebugging,"debug",IsDebugging,IsDebuggingDesc)
   MaxSearchDepthFlag := flag.Int("d",3,MaxSearchDesc)
-  StartUrlFlag       := flag.String("p",StartUrl,StartUrlDesc)
   NoRepeatFlag       := flag.Bool("r",false,NoRepeatDesc)
 
   flag.Parse()
 
   MaxSearchDepth = *MaxSearchDepthFlag + 1
-  StartUrl = UrlPrefix + *StartUrlFlag
   StartLink = &Link{StartUrl,0}
   NoRepeat = !*NoRepeatFlag
 
   LinkRegexp = RXC("<a href=\"" + LinkRegex + "\".*>.*</a>")
 
+  IsHttpRegexp := RXC("^http://")
+  IsHttpsRegexp := RXC("^https://")
+  if IsHttpsRegexp.MatchString(StartUrl) {
+    UrlPrefix = "https://" + strings.Split(StartUrl,"/")[2]
+  } else if IsHttpRegexp.MatchString(StartUrl) {
+    UrlPrefix = "http://" + strings.Split(StartUrl,"/")[2]
+  } else {
+    UrlPrefix = "http://" + strings.Split(StartUrl,"/")[0]
+    StartLink.Url = "http://" + StartLink.Url
+  }
+  fmt.Printf("UrlPrefix: %s\n",UrlPrefix)
   ThreadLocker = make(Semaphore,ThreadCount)
 }
 
@@ -332,7 +341,10 @@ func getLinks(body string, currentdepth int) []*Link {
   links   := LinkRegexp.FindAllString(content,-1)
   var retLinks []*Link = make([]*Link,len(links))
   for i,s := range links {
-    name := UrlPrefix + strings.SplitN(s,"\"",3)[1]
+    name := strings.SplitN(s,"\"",3)[1]
+    if IsLocalRegexp.MatchString(name) {
+      name = UrlPrefix + name
+    }
     retLinks[i] = &Link{name,depth}
   }
   return retLinks
