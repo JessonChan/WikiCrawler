@@ -9,7 +9,7 @@ import (
 
 
 type Store struct {
-  Nodes map[string]*Store
+  nodes map[string]*Store
   isTerminal bool
   lock Semaphore
 }
@@ -21,10 +21,10 @@ func (self *Store) insert(name string){
     self.isTerminal = true
   } else {
     nextChar := strings.SplitN(name,"",2)[0]
-    nextStore := self.Nodes[nextChar]
+    nextStore := self.nodes[nextChar]
     if nextStore == nil {
       nextStore = &Store{make(map[string]*Store), false,make(Semaphore,1)}
-      self.Nodes[nextChar] = nextStore
+      self.nodes[nextChar] = nextStore
     }
     if len(name) == 1 {
       nextStore.isTerminal = true
@@ -39,17 +39,17 @@ func (self *Store) insert(name string){
 
 // prints out every string the store
 func (self *Store) Print() {
-  self.PrintString("")
+  self.printString("")
 }
 
 // accumulatory helpter for store printer
-func (self *Store) PrintString(acc string) {
+func (self *Store) printString(acc string) {
   self.Lock()
   if self.isTerminal {
     fmt.Printf("%s\n",acc)
   }
-  for c,s := range self.Nodes {
-    s.PrintString(acc + c)
+  for c,s := range self.nodes {
+    s.printString(acc + c)
   }
   self.Unlock()
 }
@@ -76,7 +76,7 @@ func (self *Store) size(acc int) int {
   }
 
   self.Lock()
-  for _, node := range self.Nodes {
+  for _, node := range self.nodes {
     acc = node.size(acc)
   }
 
@@ -92,13 +92,37 @@ func (self *Store) contain(s string) bool {
   }
 
   self.Lock()
-  subnode := self.Nodes[s[0:1]]
+  subnode := self.nodes[s[0:1]]
   self.Unlock()
   if subnode != nil {
     return subnode.contain(s[1:])
   }
   return false
 }
+
+// iterates through this store putting each string into the channel
+// puts one nil in the chan before terminating
+func (self *Store) Iterate() chan string {
+  output := make(chan string)
+  self.iterate("",output)
+  return output;
+}
+
+func (self *Store) iterate(acc string, output chan string) {
+  if self.isTerminal {
+    output<-acc
+  }
+
+  self.Lock()
+  for c,s := range self.nodes {
+    next := acc + c
+    self.Unlock()
+    s.iterate(next,output)
+    self.Lock()
+  }
+  self.Unlock()
+}
+
 /////////////////////////////////////////////
 // Semaphores
 /////////////////////////////////////////////
@@ -113,5 +137,3 @@ func (s Semaphore) Lock() {
 func (s Semaphore) Unlock() {
   <-s
 }
-
-
