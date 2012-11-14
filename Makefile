@@ -5,4 +5,4 @@ clean:
 		go clean
 
 build: clean
-		go build crawler.go
+		go build crawler.go store.go
