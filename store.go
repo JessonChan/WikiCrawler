@@ -104,8 +104,13 @@ func (self *Store) contain(s string) bool {
 // puts one nil in the chan before terminating
 func (self *Store) Iterate() chan string {
   output := make(chan string)
-  self.iterate("",output)
+  go self.iterate("",output)
   return output;
+}
+
+func (self *Store) startIterate(acc string, output chan string) {
+  self.iterate(acc,output)
+  output<-nil
 }
 
 func (self *Store) iterate(acc string, output chan string) {
