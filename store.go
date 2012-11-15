@@ -15,7 +15,7 @@ type Store struct {
 }
 
 // add that string to the store.
-func (self *Store) insert(name string){
+func (self *Store) Insert(name string){
   self.Lock()
   if(len(name) == 0) {
     self.isTerminal = true
@@ -30,7 +30,7 @@ func (self *Store) insert(name string){
       nextStore.isTerminal = true
     } else {
       self.Unlock()
-      nextStore.insert(name[1:])
+      nextStore.Insert(name[1:])
       return
     }
   }

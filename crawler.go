@@ -22,13 +22,13 @@ type Link struct {
 }
 
 // gets the html from the given link
-func (self *Link) UrlGet() string {
+func UrlGet(url string) string {
   var httpClient *http.Client = &http.Client{}
   for ;; {
-    resp, err := httpClient.Get(self.Url)
+    resp, err := httpClient.Get(url)
     if err != nil {
       if IsDebugging {
-        fmt.Printf("error getting page %s\n error was:%+v\n",self.Url,err)
+        fmt.Printf("error getting page %s\n error was:%+v\n",url,err)
       }
       if IsFailure(err) {
         return ""
@@ -60,7 +60,7 @@ var ThreadLocker Semaphore
 
 var MainStore Store = Store{make(map[string]*Store),false,make(Semaphore,1)}
 
-var StartLink *Link
+var StartLink string
 var NoRepeat bool = true;
 var LinkRegex = "/wiki/.*"
 var UrlPrefix string
@@ -86,7 +86,7 @@ func main() {
 
   ParseCommandLine()
 
-  fmt.Printf("scanning %s\n",StartLink.Url)
+  fmt.Printf("scanning %s\n",StartLink)
   if NoRepeat {
     fmt.Printf("will not repeat links\n")
   } else {
@@ -97,24 +97,21 @@ func main() {
     StartInteruptHandler()
   }
 
-  values := make([]*Link,1)
-  values[0] = StartLink
-
-  resultChannel := make(chan []*Link)
+  values := Store{make(map[string]*Store),false,make(Semaphore,1)}
+  values.Insert(StartLink)
+  resultChannel := make(chan *Store)
 
   for i := 0; i < MaxSearchDepth; i += 1 {
     start := time.Now()
     fmt.Printf("starting sweap of depth %d\n",i)
-    go StartThreads(values,resultChannel)
-    results := len(values)
-    values = make([]*Link,0)
+    go StartThreads(&values,resultChannel)
+    results := values.Size()
+    newValues := Store{make(map[string]*Store),false,make(Semaphore,1)}
     for i := 0; i < results; i += 1 {
-      newValues := <-resultChannel
-      for _,l := range newValues {
-        values = append(values,l)
-      }
+      newValues.Join(<-resultChannel)
     }
-    fmt.Printf("finish sweap of depth %d in %v, %d links found\n",i,time.Now().Sub(start),len(values))
+    values = newValues
+    fmt.Printf("finish sweap of depth %d in %v, %d links found\n",i,time.Now().Sub(start),values.Size())
   }
 
   MainStore.Print()
@@ -133,7 +130,7 @@ func ParseCommandLine() {
   flag.Parse()
 
   MaxSearchDepth = *MaxSearchDepthFlag + 1
-  StartLink = &Link{StartUrl,0}
+  StartLink = StartUrl
   NoRepeat = !*NoRepeatFlag
 
   LinkRegexp = RXC("<a href=\"" + LinkRegex + "\".*>.*</a>")
@@ -146,7 +143,7 @@ func ParseCommandLine() {
     UrlPrefix = "http://" + strings.Split(StartUrl,"/")[2]
   } else {
     UrlPrefix = "http://" + strings.Split(StartUrl,"/")[0]
-    StartLink.Url = "http://" + StartLink.Url
+    StartLink= "http://" + StartLink
   }
   fmt.Printf("UrlPrefix: %s\n",UrlPrefix)
   ThreadLocker = make(Semaphore,ThreadCount)
@@ -163,78 +160,64 @@ func StartInteruptHandler(){
 }
 
 // Start threads for each link
-func StartThreads(values []*Link, ret chan []*Link){
-  for _,l := range values {
-    StartCrawler(l,ret)
+func StartThreads(values *Store, ret chan *Store){
+  urls := values.Iterate()
+  for url:=<-urls; url != ""; url =<-urls{
+    StartCrawler(url,ret)
   }
 }
 
 // Attempts to start a new crawler thread. 
 // Blocks if maximum thread count has been reached
-func StartCrawler(NextLink *Link, ret chan []*Link){
+func StartCrawler(NextLink string, ret chan *Store){
   ThreadLocker.Lock()
   go StartThread(NextLink,ret)
 }
 
 // basic worker thread.
-func StartThread(NextLink *Link, ret chan []*Link){
-    body := NextLink.UrlGet()
-    title := TitleGet(body)
-    HandleNewLink(NextLink,title,body,ret)
+func StartThread(NextLink string, ret chan *Store){
+    body := UrlGet(NextLink)
+    HandleNewLink(NextLink,body,ret)
 }
 
 // function for parsing a link
-func HandleNewLink(L *Link, title string, body string, ret chan []*Link) {
-  if L.Depth != MaxSearchDepth {
-    Links := getLinks(body,L.Depth)
-    if IsDebugging && len(Links) == 0{
-      fmt.Printf("No links found for %s\n",L.Url)
-      fmt.Printf("Body was:\n%s",body)
-    }
-    if NoRepeat {
-      Links = PruneDups(Links)
-    }
-    for _,l := range Links {
-      MainStore.insert(l.Url)
-    }
-    ret<-Links
-    ThreadLocker.Unlock()
+func HandleNewLink(url string, body string, ret chan *Store) {
+  links := getLinks(body)
+  if IsDebugging && links.Size() == 0{
+    fmt.Printf("No links found for %s\n",url)
+    fmt.Printf("Body was:\n%s",body)
   }
+  if NoRepeat {
+    links = PruneDups(links)
+  }
+  MainStore.Join(links)
+  ret<-links
+  ThreadLocker.Unlock()
 }
 
 // remove all elements already seen in the main store
-func PruneDups(links []*Link) []*Link {
-  ret := make([]*Link,0)
-  for _,l := range links {
-    if !MainStore.contain(l.Url) {
-      ret = append(ret,l)
-    }
-  }
-  return ret
+func PruneDups(links *Store) *Store {
+  //TODO
+  return links
 }
 
 /////////////////////////////////////////////
 // utilities
 /////////////////////////////////////////////
-// get the title from the wikipedia page
-func TitleGet(body string) string {
-  return TitleRegexp.FindString(body)
-}
 
 // get all Links from the content of the body of a page
-func getLinks(body string, currentdepth int) []*Link {
+func getLinks(body string) *Store {
   content := getContent(body)
-  depth := currentdepth + 1
   links   := LinkRegexp.FindAllString(content,-1)
-  var retLinks []*Link = make([]*Link,len(links))
-  for i,s := range links {
+  ret :=  &Store{make(map[string]*Store), false,make(Semaphore,1)}
+  for _,s := range links {
     name := strings.SplitN(s,"\"",3)[1]
     if IsLocalRegexp.MatchString(name) {
       name = UrlPrefix + name
     }
-    retLinks[i] = &Link{name,depth}
+    ret.Insert(name)
   }
-  return retLinks
+  return ret
 }
 
 // get the content div from a wikipedia page
