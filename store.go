@@ -39,19 +39,10 @@ func (self *Store) insert(name string){
 
 // prints out every string the store
 func (self *Store) Print() {
-  self.printString("")
-}
-
-// accumulatory helpter for store printer
-func (self *Store) printString(acc string) {
-  self.Lock()
-  if self.isTerminal {
-    fmt.Printf("%s\n",acc)
+  strs := self.Iterate()
+  for url := <-strs; url != ""; url = <-strs {
+    fmt.Printf("%s\n",url)
   }
-  for c,s := range self.nodes {
-    s.printString(acc + c)
-  }
-  self.Unlock()
 }
 
 // lock this node of the store. does not lock its children
@@ -67,6 +58,13 @@ func (self *Store) Unlock(){
 // get the number of strings in the store
 func (self *Store) Size() int {
   return self.size(0)
+}
+
+func (self *Store) Join(other *Store) {
+  strs := other.Iterate()
+  for url :=<-strs; url != ""; url =<-strs {
+    self.Insert(url)
+  }
 }
 
 // get the number of strings in the store using an accumulator
@@ -101,16 +99,16 @@ func (self *Store) contain(s string) bool {
 }
 
 // iterates through this store putting each string into the channel
-// puts one nil in the chan before terminating
+// puts one emtpy sting in the chan before terminating
 func (self *Store) Iterate() chan string {
   output := make(chan string)
-  go self.iterate("",output)
+  go self.startIterate("",output)
   return output;
 }
 
 func (self *Store) startIterate(acc string, output chan string) {
   self.iterate(acc,output)
-  output<-nil
+  output<-""
 }
 
 func (self *Store) iterate(acc string, output chan string) {

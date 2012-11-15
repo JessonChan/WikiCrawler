@@ -117,7 +117,7 @@ func main() {
     fmt.Printf("finish sweap of depth %d in %v, %d links found\n",i,time.Now().Sub(start),len(values))
   }
 
-  //MainStore.Print()
+  MainStore.Print()
   return
 }
 
