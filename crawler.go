@@ -12,15 +12,6 @@ import (
   "time"
 )
 
-/////////////////////////////////////////////
-// Links
-/////////////////////////////////////////////
-
-type Link struct {
-  Url string
-  Depth int
-}
-
 // gets the html from the given link
 func UrlGet(url string) string {
   var httpClient *http.Client = &http.Client{}
@@ -108,8 +99,19 @@ func main() {
     results := values.Size()
     newValues := Store{make(map[string]*Store),false,make(Semaphore,1)}
     for i := 0; i < results; i += 1 {
-      newValues.Join(<-resultChannel)
+      next := <-resultChannel
+      if !NoRepeat {
+        newValues.Join(next)
+      } else {
+        urls := (next).Iterate()
+        for url:=<-urls; url != ""; url = <-urls {
+          if !MainStore.Contain(url) {
+            newValues.Insert(url)
+          }
+        }
+      }
     }
+    MainStore.Join(&newValues)
     values = newValues
     fmt.Printf("finish sweap of depth %d in %v, %d links found\n",i,time.Now().Sub(start),values.Size())
   }
@@ -187,18 +189,8 @@ func HandleNewLink(url string, body string, ret chan *Store) {
     fmt.Printf("No links found for %s\n",url)
     fmt.Printf("Body was:\n%s",body)
   }
-  if NoRepeat {
-    links = PruneDups(links)
-  }
-  MainStore.Join(links)
   ret<-links
   ThreadLocker.Unlock()
-}
-
-// remove all elements already seen in the main store
-func PruneDups(links *Store) *Store {
-  //TODO
-  return links
 }
 
 /////////////////////////////////////////////

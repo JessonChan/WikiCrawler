@@ -84,7 +84,7 @@ func (self *Store) size(acc int) int {
 }
 
 // does this contain the given string?
-func (self *Store) contain(s string) bool {
+func (self *Store) Contain(s string) bool {
   if s == "" {
     return self.isTerminal
   }
@@ -93,7 +93,7 @@ func (self *Store) contain(s string) bool {
   subnode := self.nodes[s[0:1]]
   self.Unlock()
   if subnode != nil {
-    return subnode.contain(s[1:])
+    return subnode.Contain(s[1:])
   }
   return false
 }
